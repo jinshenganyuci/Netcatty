@@ -30,6 +30,8 @@ test("single and batch downloads route by current remote type and size", async (
     ["/remote/dir-link", { name: "dir-link", size: 9, sizeKnown: true, type: "symlink", lastModified: 0 }],
   ]);
   const downloads: Array<{ sourcePath: string; totalBytes?: number; isDirectory: boolean }> = [];
+  const packedCalls: Array<{ remoteDirectory: string; localDirectory: string; names: string[] }> = [];
+  let packedStatus: "completed" | "unsupported" = "unsupported";
   let saveCalls = 0;
   let directoryCalls = 0;
   let onSave: (name: string) => void = () => undefined;
@@ -38,6 +40,10 @@ test("single and batch downloads route by current remote type and size", async (
   const sftpRef = { current: {
     leftPane: pane, rightPane: pane,
     joinPath: (parent: string, name: string) => `${parent}/${name}`,
+    tryPackedDownload: async (request: { remoteDirectory: string; localDirectory: string; names: string[] }) => {
+      packedCalls.push(request);
+      return packedStatus;
+    },
     downloadToLocal: async (params: { sourcePath: string; totalBytes?: number; isDirectory: boolean }) => {
       downloads.push(params);
       return "completed";
@@ -71,7 +77,7 @@ test("single and batch downloads route by current remote type and size", async (
   try {
     await act(async () => { renderer = create(React.createElement(Probe)); });
     const single = ops!.onDownloadFileLeft as unknown as (entry: SftpFileEntry) => Promise<void>;
-    const batch = ops!.onDownloadFilesLeft as unknown as (entries: SftpFileEntry[]) => Promise<void>;
+    const batch = ops!.onDownloadFilesLeft as unknown as (entries: SftpFileEntry[], fullPaths?: string[]) => Promise<void>;
 
     await act(async () => { await single(file("smaller", 100_000)); });
     await act(async () => { await single(file("larger", 25_000)); });
@@ -88,6 +94,7 @@ test("single and batch downloads route by current remote type and size", async (
     };
     await act(async () => { await single(file("changes-in-picker", 100)); });
     assert.equal(downloads.at(-1)?.totalBytes, 30, "size is checked again after Save As");
+    assert.equal(packedCalls.length, 0, "single regular files bypass archive download");
     const countBeforeTypeChange = downloads.length;
     await act(async () => { await single(file("type-changes-in-picker", 100)); });
     assert.equal(downloads.length, countBeforeTypeChange, "type changes during Save As abort the transfer");
@@ -118,6 +125,21 @@ test("single and batch downloads route by current remote type and size", async (
     assert.equal(becameFile?.totalBytes, 12);
     assert.equal(downloads.find(({ sourcePath }) => sourcePath === "/remote/dir-link")?.isDirectory, true);
     assert.equal(downloads.some(({ sourcePath }) => sourcePath === "/remote/missing"), false);
+
+    // A successful tar stream handles the selected roots in one operation. In tree
+    // view, use their captured parent rather than the browsing pane's current path.
+    packedStatus = "completed";
+    const oldNormalCount = downloads.length;
+    const oldPackedCount = packedCalls.length;
+    await act(async () => { await batch([file("one", 10), file("two", 0, "directory")],
+      ["/remote/nested/one", "/remote/nested/two"]); });
+    assert.equal(packedCalls.length, oldPackedCount + 1);
+    assert.deepEqual(packedCalls.at(-1)?.names, ["one", "two"]);
+    assert.equal(packedCalls.at(-1)?.remoteDirectory, "/remote/nested");
+    assert.equal(packedCalls.at(-1)?.localDirectory, "/downloads");
+    await act(async () => { await single(file("became-dir", 0, "directory")); });
+    assert.deepEqual(packedCalls.at(-1)?.names, ["became-dir"]);
+    assert.equal(downloads.length, oldNormalCount, "completed archives never rerun ordinary SFTP");
   } finally {
     await act(async () => { renderer?.unmount(); });
     globals.IS_REACT_ACT_ENVIRONMENT = previousAct;

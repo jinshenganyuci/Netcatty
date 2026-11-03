@@ -7634,6 +7634,7 @@ async function startInternalTransfer(event, payload, onProgress) {
  */
 async function cancelTransfer(event, payload) {
   const { transferId } = payload;
+  if (require("./sftpBridge/packedDownload.cjs").cancelActive(transferId, event?.sender?.id)) return { success: true };
   rememberPendingCancel(transferId);
   if (cancelQueuedTransfer(transferId)) {
     // Queued cancel already settled the job; clear pending so a later retry

@@ -2529,6 +2529,20 @@ const {
   getSftpHomeDir,
 } = fileOpsApi;
 
+const packedDownloads = require("./sftpBridge/packedDownload.cjs");
+
+function downloadPackedSftp(event, payload) {
+  return packedDownloads.downloadPacked({
+    client: sftpClients.get(payload.sftpId), event, payload,
+    encoding: resolveEncodingForRequest(payload.sftpId, payload.encoding),
+    execProbe: execRemoteShellCommand,
+  });
+}
+
+function cancelPackedSftp(event, payload) {
+  packedDownloads.cancelActive(payload.transferId, event?.sender?.id);
+}
+
 function resolveRendererSftpSourceSession(channel, payload = {}) {
   if (channel === "netcatty:sftp:openForSession") return payload.sessionId || null;
   if (channel === "netcatty:sftp:open") return payload.sourceSessionId || null;
@@ -2723,6 +2737,8 @@ function registerHandlers(ipcMain, options = {}) {
       "netcatty:sftp:chmod",
       "netcatty:sftp:extract",
       "netcatty:sftp:createArchive",
+      "netcatty:sftp:downloadPacked",
+      "netcatty:sftp:cancelPacked",
       "netcatty:sftp:homeDir",
     ].forEach((channel) => registerWorkerHandle(ipcMain, terminalWorkerManager, channel, ownership));
     return;
@@ -2747,6 +2763,8 @@ function registerHandlers(ipcMain, options = {}) {
     ["netcatty:sftp:chmod", chmodSftp],
     ["netcatty:sftp:extract", extractSftpArchive],
     ["netcatty:sftp:createArchive", createSftpArchive],
+    ["netcatty:sftp:downloadPacked", downloadPackedSftp],
+    ["netcatty:sftp:cancelPacked", cancelPackedSftp],
     ["netcatty:sftp:homeDir", getSftpHomeDir],
   ].forEach(([channel, handler]) => registerActivityHandle(ipcMain, channel, handler, ownership));
 }

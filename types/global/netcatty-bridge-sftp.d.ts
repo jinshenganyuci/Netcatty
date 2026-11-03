@@ -48,6 +48,12 @@ declare global {
     clearPendingTransferCancel?(transferId: string): Promise<{ success: boolean } | void>;
     sameHostCopyDirectory?(sftpId: string, sourcePath: string, targetPath: string, encoding?: SftpFilenameEncoding, transferId?: string): Promise<{ success: boolean }>;
 
+    downloadPackedSftp?(
+      options: { sftpId: string; transferId: string; remoteDirectory: string; names: string[]; localDirectory: string; encoding?: SftpFilenameEncoding },
+      onProgress?: (progress: { phase: "receiving" | "extracting"; bytes: number }) => void,
+    ): Promise<{ status: "completed" | "fallback" | "cancelled"; reason?: string }>;
+    cancelPackedSftp?(transferId: string): Promise<void>;
+
     // Compressed folder upload
     startCompressedUpload?(
       options: {

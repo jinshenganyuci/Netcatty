@@ -943,6 +943,16 @@ function createPreloadApi(ctx) {
   createSftpArchive: async (sftpId, options, encoding) => {
     return ipcRenderer.invoke("netcatty:sftp:createArchive", { sftpId, options, encoding });
   },
+  downloadPackedSftp: async (options, onProgress) => {
+    const channel = "netcatty:sftp:packedProgress";
+    const listener = (_event, update) => {
+      if (update?.transferId === options.transferId) onProgress({ phase: update.phase, bytes: update.bytes });
+    };
+    if (onProgress) ipcRenderer.on(channel, listener);
+    try { return await ipcRenderer.invoke("netcatty:sftp:downloadPacked", options); }
+    finally { if (onProgress) ipcRenderer.removeListener(channel, listener); }
+  },
+  cancelPackedSftp: (transferId) => ipcRenderer.invoke("netcatty:sftp:cancelPacked", { transferId }),
   getSftpHomeDir: async (sftpId, encoding) => {
     return ipcRenderer.invoke("netcatty:sftp:homeDir", { sftpId, encoding });
   },
